@@ -1,0 +1,147 @@
+definitions:
+  models.User:
+    properties:
+      id:
+        type: integer
+      password:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /delete/{id}:
+    delete:
+      description: Elimina un usuario de la base de datos (requiere rol dev)
+      parameters:
+      - description: ID del usuario
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Usuario eliminado
+          schema:
+            type: string
+        "500":
+          description: Error al eliminar usuario
+          schema:
+            type: string
+      summary: Eliminar usuario
+      tags:
+      - users
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Autentica un usuario y devuelve un token JWT
+      parameters:
+      - description: Credenciales de usuario
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.User'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Iniciar sesión
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: Crea un nuevo usuario en la base de datos
+      parameters:
+      - description: Datos del nuevo usuario
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.User'
+      produces:
+      - text/plain
+      responses:
+        "201":
+          description: Usuario creado
+          schema:
+            type: string
+        "400":
+          description: Error al registrar usuario
+          schema:
+            type: string
+      summary: Registrar nuevo usuario
+      tags:
+      - users
+  /update/{id}:
+    put:
+      consumes:
+      - application/json
+      description: Actualiza los datos de un usuario existente (requiere rol dev)
+      parameters:
+      - description: ID del usuario
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Datos actualizados
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.User'
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Usuario actualizado
+          schema:
+            type: string
+        "404":
+          description: Usuario no encontrado
+          schema:
+            type: string
+      summary: Actualizar usuario
+      tags:
+      - users
+  /users:
+    get:
+      description: Retorna todos los usuarios registrados (requiere rol admin)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.User'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Obtener todos los usuarios
+      tags:
+      - users
+swagger: "2.0"
