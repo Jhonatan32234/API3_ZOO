@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"os"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
@@ -23,9 +24,16 @@ import (
 // @Failure 400 {string} string "Error al registrar usuario"
 // @Router /register [post]
 func Register(w http.ResponseWriter, r *http.Request) {
+	
 	err := r.ParseMultipartForm(10 << 20) // máximo 10MB
 	if err != nil {
 		http.Error(w, "No se pudo parsear el formulario", http.StatusBadRequest)
+		return
+	}
+
+	err = os.MkdirAll("uploads", os.ModePerm)
+	if err != nil {
+		http.Error(w, "No se pudo crear carpeta uploads: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
