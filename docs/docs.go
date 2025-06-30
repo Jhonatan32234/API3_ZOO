@@ -223,7 +223,7 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
-                "password": {
+                "image": {
                     "type": "string"
                 },
                 "role": {

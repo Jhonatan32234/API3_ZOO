@@ -3,7 +3,7 @@ definitions:
     properties:
       id:
         type: integer
-      password:
+      image:
         type: string
       role:
         type: string
