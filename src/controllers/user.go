@@ -5,9 +5,11 @@ import (
 	"api3/src/models"
 	"api3/src/utils"
 	"encoding/json"
+	"log"
 	"net/http"
-	"strconv"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
@@ -24,47 +26,88 @@ import (
 // @Failure 400 {string} string "Error al registrar usuario"
 // @Router /register [post]
 func Register(w http.ResponseWriter, r *http.Request) {
-	
-	err := r.ParseMultipartForm(10 << 20) // máximo 10MB
+	contentType := r.Header.Get("Content-Type")
+
+	var username, password, role, imagePath string
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		err := r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			http.Error(w, "No se pudo parsear el formulario: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		username = r.FormValue("username")
+		password = r.FormValue("password")
+		role = r.FormValue("role")
+		if role == "" {
+			role = "user"
+		}
+
+		// Validar campos obligatorios
+		if username == "" || password == "" {
+			http.Error(w, "Username y password son obligatorios", http.StatusBadRequest)
+			return
+		}
+
+		file, handler, err := r.FormFile("image")
+		if err == nil {
+			defer file.Close()
+
+			err = os.MkdirAll("uploads", os.ModePerm)
+			if err != nil {
+				http.Error(w, "No se pudo crear carpeta uploads: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			imagePath = "uploads/" + handler.Filename
+			dst, err := utils.SaveFile(file, imagePath)
+			if err != nil || dst == "" {
+				http.Error(w, "No se pudo guardar la imagen: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Si error es por no enviar archivo, no pasa nada, si es otro error, reportar
+			if err != http.ErrMissingFile {
+				http.Error(w, "Error al procesar la imagen: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			imagePath = "" // No imagen
+		}
+
+	} else {
+		// JSON como alternativa
+		var input struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		username = input.Username
+		password = input.Password
+		role = input.Role
+		if role == "" {
+			role = "user"
+		}
+
+		if username == "" || password == "" {
+			http.Error(w, "Username y password son obligatorios", http.StatusBadRequest)
+			return
+		}
+
+		imagePath = ""
+	}
+
+	// Hashear contraseña (manejo de error)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "No se pudo parsear el formulario", http.StatusBadRequest)
+		http.Error(w, "Error al encriptar la contraseña", http.StatusInternalServerError)
 		return
 	}
-
-	err = os.MkdirAll("uploads", os.ModePerm)
-	if err != nil {
-		http.Error(w, "No se pudo crear carpeta uploads: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	username := r.FormValue("username")
-	password := r.FormValue("password")
-	role := r.FormValue("role")
-	if role == "" {
-		role = "user"
-	}
-
-	// Manejo de imagen
-	file, handler, err := r.FormFile("image")
-	if err != nil {
-		http.Error(w, "Error al recibir la imagen", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// Guarda la imagen en disco
-	imagePath := "uploads/" + handler.Filename
-	dst, err := utils.SaveFile(file, imagePath)
-	if err != nil {
-		http.Error(w, "No se pudo guardar la imagen", http.StatusInternalServerError)
-		return
-	}
-	if dst == "" {
-		http.Error(w, "No se pudo guardar la imagen", http.StatusInternalServerError)
-		return
-	}
-
-	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 
 	user := models.User{
 		Username: username,
@@ -75,13 +118,14 @@ func Register(w http.ResponseWriter, r *http.Request) {
 
 	result := db.DB.Create(&user)
 	if result.Error != nil {
-		http.Error(w, "Error al registrar usuario", http.StatusBadRequest)
+		http.Error(w, "Error al registrar usuario: "+result.Error.Error(), http.StatusBadRequest)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte("Usuario creado"))
 }
+
 
 
 // Login godoc
@@ -95,8 +139,19 @@ func Register(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} map[string]string
 // @Router /login [post]
 func Login(w http.ResponseWriter, r *http.Request) {
-	var input models.User
-	json.NewDecoder(r.Body).Decode(&input)
+	var input struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Datos inválidos", http.StatusBadRequest)
+		return
+	}
+
+	if input.Username == "" || input.Password == "" {
+		http.Error(w, "Username y password son obligatorios", http.StatusBadRequest)
+		return
+	}
 
 	var dbUser models.User
 	result := db.DB.Where("username = ?", input.Username).First(&dbUser)
@@ -105,8 +160,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug para verificar hash y password (remover en producción)
+	log.Printf("Login intento: user=%s, pass=%s, hash=%s", input.Username, input.Password, dbUser.Password)
+
 	err := bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(input.Password))
 	if err != nil {
+		log.Println("Error bcrypt:", err)
 		http.Error(w, "Contraseña incorrecta", http.StatusUnauthorized)
 		return
 	}
@@ -120,6 +179,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
+
+
 
 
 // GetAllUsers godoc
@@ -157,7 +218,11 @@ func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 // @Router /update/{id} [put]
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	idParam := mux.Vars(r)["id"]
-	id, _ := strconv.Atoi(idParam)
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		http.Error(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
 
 	var user models.User
 	if err := db.DB.First(&user, id).Error; err != nil {
@@ -165,17 +230,104 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var updateData models.User
-	json.NewDecoder(r.Body).Decode(&updateData)
+	contentType := r.Header.Get("Content-Type")
 
-	if updateData.Password != "" {
-		hashed, _ := bcrypt.GenerateFromPassword([]byte(updateData.Password), bcrypt.DefaultCost)
-		updateData.Password = string(hashed)
+	var username, role, password string
+	var imagePath string
+	imageUpdated := false
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		err := r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			http.Error(w, "No se pudo parsear el formulario: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		username = r.FormValue("username")
+		role = r.FormValue("role")
+		password = r.FormValue("password")
+
+		file, handler, err := r.FormFile("image")
+		if err == nil {
+			defer file.Close()
+
+			// Crear carpeta uploads si no existe
+			if err := os.MkdirAll("uploads", os.ModePerm); err != nil {
+				http.Error(w, "No se pudo crear carpeta de imágenes: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			newImagePath := "uploads/" + handler.Filename
+
+			// Guardar archivo en disco
+			savedPath, err := utils.SaveFile(file, newImagePath)
+			if err != nil || savedPath == "" {
+				http.Error(w, "No se pudo guardar la nueva imagen: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Eliminar imagen anterior si existía
+			if user.Image != "" {
+				if err := os.Remove(user.Image); err != nil && !os.IsNotExist(err) {
+					log.Println("No se pudo eliminar imagen anterior:", err)
+				}
+			}
+
+			imagePath = savedPath
+			imageUpdated = true
+		} else {
+			if err != http.ErrMissingFile {
+				http.Error(w, "Error al procesar imagen: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		// JSON sin imagen
+		var input struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		username = input.Username
+		password = input.Password
+		role = input.Role
 	}
 
-	db.DB.Model(&user).Updates(updateData)
+	// Construir solo campos válidos
+	updates := map[string]interface{}{}
+
+	if username != "" {
+		updates["username"] = username
+	}
+	if role != "" {
+		updates["role"] = role
+	}
+	if password != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "Error al encriptar la contraseña", http.StatusInternalServerError)
+			return
+		}
+		updates["password"] = string(hashed)
+	}
+	if imageUpdated {
+		updates["image"] = imagePath
+	}
+
+	if len(updates) > 0 {
+		if err := db.DB.Model(&user).Updates(updates).Error; err != nil {
+			http.Error(w, "Error al actualizar usuario: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	w.Write([]byte("Usuario actualizado"))
 }
+
 
 // DeleteUser godoc
 // @Summary Eliminar usuario
