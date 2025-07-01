@@ -12,7 +12,7 @@ import (
 var DB *gorm.DB
 
 func ConnectDB() {
-	dsn := "root:root@tcp(127.0.0.1:3306)/userdb?parseTime=true"
+	dsn := "root:root@tcp(mysql-container-user:3306)/userdb?parseTime=true"
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
