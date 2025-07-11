@@ -12,11 +12,14 @@ func SetupRoutes() *mux.Router {
 
 	r.HandleFunc("/login", controllers.Login).Methods("POST")
 
-	r.HandleFunc("/register", /*utils.RequireRole("dev")*/(controllers.Register)).Methods("POST")
+	r.HandleFunc("/register",(controllers.Register)).Methods("POST")
 	r.HandleFunc("/update/{id}", utils.RequireRole("admin")(controllers.UpdateUser)).Methods("PUT")
 	r.HandleFunc("/delete/{id}", utils.RequireRole("admin")(controllers.DeleteUser)).Methods("DELETE")
-	r.HandleFunc("/users", (controllers.GetAllUsers)).Methods("GET")
+	r.HandleFunc("/users", utils.RequireRole("admin")(controllers.GetAllUsers)).Methods("GET")
 
 
 	return r
 }
+
+
+

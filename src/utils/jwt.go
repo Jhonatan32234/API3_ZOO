@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"github.com/golang-jwt/jwt/v5"
-	"time"
 	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var jwtKey = []byte("clave_secreta_super_segura")
@@ -11,13 +12,15 @@ var jwtKey = []byte("clave_secreta_super_segura")
 type Claims struct {
 	UserID uint   `json:"user_id"`
 	Role   string `json:"role"`
+	Zona   string `json:"zona"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(userID uint, role string) (string, error) {
+func GenerateToken(userID uint, role string, zona string) (string, error) {
 	claims := &Claims{
 		UserID: userID,
 		Role:   role,
+		Zona:   zona,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -27,7 +30,6 @@ func GenerateToken(userID uint, role string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtKey)
 }
-
 
 func ValidateToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
@@ -44,3 +46,4 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 
 	return nil, errors.New("token inválido")
 }
+

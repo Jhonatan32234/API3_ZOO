@@ -28,7 +28,7 @@ import (
 func Register(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 
-	var username, password, role, imagePath string
+	var username, password, role, zona, imagePath string
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		err := r.ParseMultipartForm(10 << 20)
@@ -40,47 +40,38 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		username = r.FormValue("username")
 		password = r.FormValue("password")
 		role = r.FormValue("role")
+		zona = r.FormValue("zona")
+
 		if role == "" {
 			role = "user"
 		}
 
-		// Validar campos obligatorios
-		if username == "" || password == "" {
-			http.Error(w, "Username y password son obligatorios", http.StatusBadRequest)
+		if username == "" || password == "" || zona == "" {
+			http.Error(w, "Username, password y zona son obligatorios", http.StatusBadRequest)
 			return
 		}
 
 		file, handler, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
-
-			err = os.MkdirAll("uploads", os.ModePerm)
-			if err != nil {
-				http.Error(w, "No se pudo crear carpeta uploads: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-
+			os.MkdirAll("uploads", os.ModePerm)
 			imagePath = "uploads/" + handler.Filename
 			dst, err := utils.SaveFile(file, imagePath)
 			if err != nil || dst == "" {
 				http.Error(w, "No se pudo guardar la imagen: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-		} else {
-			// Si error es por no enviar archivo, no pasa nada, si es otro error, reportar
-			if err != http.ErrMissingFile {
-				http.Error(w, "Error al procesar la imagen: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-			imagePath = "" // No imagen
+		} else if err != http.ErrMissingFile {
+			http.Error(w, "Error al procesar imagen: "+err.Error(), http.StatusBadRequest)
+			return
 		}
 
 	} else {
-		// JSON como alternativa
 		var input struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
 			Role     string `json:"role"`
+			Zona     string `json:"zona"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
@@ -90,19 +81,18 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		username = input.Username
 		password = input.Password
 		role = input.Role
+		zona = input.Zona
+
 		if role == "" {
 			role = "user"
 		}
 
-		if username == "" || password == "" {
-			http.Error(w, "Username y password son obligatorios", http.StatusBadRequest)
+		if username == "" || password == "" || zona == "" {
+			http.Error(w, "Username, password y zona son obligatorios", http.StatusBadRequest)
 			return
 		}
-
-		imagePath = ""
 	}
 
-	// Hashear contraseña (manejo de error)
 	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Error al encriptar la contraseña", http.StatusInternalServerError)
@@ -113,6 +103,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		Username: username,
 		Password: string(hashedPwd),
 		Role:     role,
+		Zona:     zona,
 		Image:    imagePath,
 	}
 
@@ -160,24 +151,25 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Debug para verificar hash y password (remover en producción)
-	log.Printf("Login intento: user=%s, pass=%s, hash=%s", input.Username, input.Password, dbUser.Password)
-
 	err := bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(input.Password))
 	if err != nil {
-		log.Println("Error bcrypt:", err)
 		http.Error(w, "Contraseña incorrecta", http.StatusUnauthorized)
 		return
 	}
 
-	token, err := utils.GenerateToken(dbUser.ID, dbUser.Role)
+	token, err := utils.GenerateToken(dbUser.ID, dbUser.Role, dbUser.Zona)
 	if err != nil {
 		http.Error(w, "No se pudo generar token", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":    token,
+		"username": dbUser.Username,
+		"role":     dbUser.Role,
+		"zona":     dbUser.Zona,
+	})
 }
 
 

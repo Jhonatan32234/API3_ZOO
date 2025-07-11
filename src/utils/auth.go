@@ -8,7 +8,6 @@ import (
 func RequireRole(allowedRoles ...string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			// Leer token desde URL (?token=...)
 			tokenStr := r.URL.Query().Get("token")
 			if tokenStr == "" {
 				http.Error(w, "Token requerido en la URL", http.StatusUnauthorized)
@@ -21,7 +20,6 @@ func RequireRole(allowedRoles ...string) func(http.HandlerFunc) http.HandlerFunc
 				return
 			}
 
-			// Verificar si el rol está en la lista permitida
 			for _, role := range allowedRoles {
 				if strings.EqualFold(claims.Role, role) {
 					next(w, r)
