@@ -20,6 +20,6 @@ func main() {
 	handlerWithCORS := utils.CORS(r)
 
 
-	log.Println("✅ Servidor corriendo en :8082")
-	log.Fatal(http.ListenAndServe(":8082", handlerWithCORS))
+	log.Println("✅ Servidor corriendo en :8080")
+	log.Fatal(http.ListenAndServe(":8080", handlerWithCORS))
 }
