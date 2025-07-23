@@ -231,6 +231,9 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                },
+                "zona": {
+                    "type": "string"
                 }
             }
         }

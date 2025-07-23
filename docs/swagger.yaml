@@ -9,6 +9,8 @@ definitions:
         type: string
       username:
         type: string
+      zona:
+        type: string
     type: object
 info:
   contact: {}

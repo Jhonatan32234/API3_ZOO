@@ -224,7 +224,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	contentType := r.Header.Get("Content-Type")
 
-	var username, role, password string
+	var username, role, password, zona string
 	var imagePath string
 	imageUpdated := false
 
@@ -238,12 +238,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		username = r.FormValue("username")
 		role = r.FormValue("role")
 		password = r.FormValue("password")
+		zona = r.FormValue("zona")
 
 		file, handler, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
 
-			// Crear carpeta uploads si no existe
 			if err := os.MkdirAll("uploads", os.ModePerm); err != nil {
 				http.Error(w, "No se pudo crear carpeta de imágenes: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -251,14 +251,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 			newImagePath := "uploads/" + handler.Filename
 
-			// Guardar archivo en disco
 			savedPath, err := utils.SaveFile(file, newImagePath)
 			if err != nil || savedPath == "" {
 				http.Error(w, "No se pudo guardar la nueva imagen: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			// Eliminar imagen anterior si existía
 			if user.Image != "" {
 				if err := os.Remove(user.Image); err != nil && !os.IsNotExist(err) {
 					log.Println("No se pudo eliminar imagen anterior:", err)
@@ -274,11 +272,11 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		// JSON sin imagen
 		var input struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
 			Role     string `json:"role"`
+			Zona     string `json:"zona"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
@@ -287,9 +285,9 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		username = input.Username
 		password = input.Password
 		role = input.Role
+		zona = input.Zona
 	}
 
-	// Construir solo campos válidos
 	updates := map[string]interface{}{}
 
 	if username != "" {
@@ -297,6 +295,9 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if role != "" {
 		updates["role"] = role
+	}
+	if zona != "" {
+		updates["zona"] = zona
 	}
 	if password != "" {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -319,6 +320,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte("Usuario actualizado"))
 }
+
 
 
 // DeleteUser godoc
