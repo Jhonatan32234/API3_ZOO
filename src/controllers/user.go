@@ -27,14 +27,14 @@ import (
 // @Failure 400 {string} string "Error al registrar usuario"
 // @Router /register [post]
 func Register(w http.ResponseWriter, r *http.Request) {
+	var username, password, role, zona string
+	var imageBytes []byte
+
 	contentType := r.Header.Get("Content-Type")
-
-	var username, password, role, zona, imageBase64 string
-
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		err := r.ParseMultipartForm(10 << 20)
 		if err != nil {
-			http.Error(w, "No se pudo parsear el formulario: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "Error al parsear formulario: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -42,28 +42,16 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		password = r.FormValue("password")
 		role = r.FormValue("role")
 		zona = r.FormValue("zona")
-
 		if role == "" {
 			role = "user"
-		}
-
-		if username == "" || password == "" || zona == "" {
-			http.Error(w, "Username, password y zona son obligatorios", http.StatusBadRequest)
-			return
 		}
 
 		file, _, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
 			var buf bytes.Buffer
-			if _, err := io.Copy(&buf, file); err != nil {
-				http.Error(w, "No se pudo leer la imagen: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			imageBase64 = base64.StdEncoding.EncodeToString(buf.Bytes())
-		} else if err != http.ErrMissingFile {
-			http.Error(w, "Error al procesar imagen: "+err.Error(), http.StatusBadRequest)
-			return
+			io.Copy(&buf, file)
+			imageBytes = buf.Bytes()
 		}
 
 	} else {
@@ -72,46 +60,38 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			Password string `json:"password"`
 			Role     string `json:"role"`
 			Zona     string `json:"zona"`
-			Image    string `json:"image"` // si la imagen viene base64 en JSON
+			Image    string `json:"image"` // base64
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "Error de JSON", http.StatusBadRequest)
 			return
 		}
-
 		username = input.Username
 		password = input.Password
 		role = input.Role
 		zona = input.Zona
-		imageBase64 = input.Image
 
-		if role == "" {
-			role = "user"
-		}
-
-		if username == "" || password == "" || zona == "" {
-			http.Error(w, "Username, password y zona son obligatorios", http.StatusBadRequest)
-			return
+		if input.Image != "" {
+			imageBytes, _ = base64.StdEncoding.DecodeString(input.Image)
 		}
 	}
 
-	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		http.Error(w, "Error al encriptar la contraseña", http.StatusInternalServerError)
+	if username == "" || password == "" || zona == "" {
+		http.Error(w, "Faltan campos obligatorios", http.StatusBadRequest)
 		return
 	}
 
+	hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	user := models.User{
 		Username: username,
 		Password: string(hashedPwd),
 		Role:     role,
 		Zona:     zona,
-		Image:    imageBase64,
+		Image:    imageBytes,
 	}
 
-	result := db.DB.Create(&user)
-	if result.Error != nil {
-		http.Error(w, "Error al registrar usuario: "+result.Error.Error(), http.StatusBadRequest)
+	if err := db.DB.Create(&user).Error; err != nil {
+		http.Error(w, "Error al guardar usuario", http.StatusBadRequest)
 		return
 	}
 
@@ -159,7 +139,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := utils.GenerateToken(dbUser.ID, dbUser.Role, dbUser.Zona)
+	token, err := utils.GenerateToken(uint(dbUser.ID), dbUser.Role, dbUser.Zona)
 	if err != nil {
 		http.Error(w, "No se pudo generar token", http.StatusInternalServerError)
 		return
@@ -187,15 +167,20 @@ func Login(w http.ResponseWriter, r *http.Request) {
 // @Router /users [get]
 func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	var users []models.User
-
 	if err := db.DB.Find(&users).Error; err != nil {
 		http.Error(w, "Error al obtener usuarios", http.StatusInternalServerError)
 		return
 	}
 
+	// Formatear imágenes
+	for i := range users {
+		users[i].FormatImage()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
 }
+
 
 
 
@@ -302,7 +287,12 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		updates["password"] = string(hashed)
 	}
 	if imageUpdated {
-		updates["image"] = imageBase64
+        decodedImage, err := base64.StdEncoding.DecodeString(imageBase64)
+        if err != nil {
+        	http.Error(w, "Error al decodificar imagen", http.StatusBadRequest)
+        	return
+        }
+        updates["image"] = decodedImage
 	}
 
 	if len(updates) > 0 {
