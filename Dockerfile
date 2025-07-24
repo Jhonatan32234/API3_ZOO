@@ -26,7 +26,6 @@ WORKDIR /app
 
 # Copiar binario y recursos desde la etapa de construcción
 COPY --from=builder /app/api-zoo .
-COPY --from=builder /app/uploads ./uploads
 COPY --from=builder /app/docs ./docs
 
 EXPOSE 8080

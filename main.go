@@ -15,7 +15,6 @@ func main() {
 	db.ConnectDB()
 	r := routes.SetupRoutes()
 	r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
-	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
 	handlerWithCORS := utils.CORS(r)
 

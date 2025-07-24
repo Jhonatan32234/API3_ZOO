@@ -4,10 +4,11 @@ import (
 	"api3/db"
 	"api3/src/models"
 	"api3/src/utils"
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
-	"log"
+	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -28,7 +29,7 @@ import (
 func Register(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 
-	var username, password, role, zona, imagePath string
+	var username, password, role, zona, imageBase64 string
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		err := r.ParseMultipartForm(10 << 20)
@@ -51,16 +52,15 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		file, handler, err := r.FormFile("image")
+		file, _, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
-			os.MkdirAll("uploads", os.ModePerm)
-			imagePath = "uploads/" + handler.Filename
-			dst, err := utils.SaveFile(file, imagePath)
-			if err != nil || dst == "" {
-				http.Error(w, "No se pudo guardar la imagen: "+err.Error(), http.StatusInternalServerError)
+			var buf bytes.Buffer
+			if _, err := io.Copy(&buf, file); err != nil {
+				http.Error(w, "No se pudo leer la imagen: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
+			imageBase64 = base64.StdEncoding.EncodeToString(buf.Bytes())
 		} else if err != http.ErrMissingFile {
 			http.Error(w, "Error al procesar imagen: "+err.Error(), http.StatusBadRequest)
 			return
@@ -72,6 +72,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			Password string `json:"password"`
 			Role     string `json:"role"`
 			Zona     string `json:"zona"`
+			Image    string `json:"image"` // si la imagen viene base64 en JSON
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
@@ -82,6 +83,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		password = input.Password
 		role = input.Role
 		zona = input.Zona
+		imageBase64 = input.Image
 
 		if role == "" {
 			role = "user"
@@ -104,7 +106,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		Password: string(hashedPwd),
 		Role:     role,
 		Zona:     zona,
-		Image:    imagePath,
+		Image:    imageBase64,
 	}
 
 	result := db.DB.Create(&user)
@@ -225,7 +227,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 
 	var username, role, password, zona string
-	var imagePath string
+	var imageBase64 string
 	imageUpdated := false
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
@@ -240,30 +242,16 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		password = r.FormValue("password")
 		zona = r.FormValue("zona")
 
-		file, handler, err := r.FormFile("image")
+		file, _, err := r.FormFile("image")
 		if err == nil {
 			defer file.Close()
 
-			if err := os.MkdirAll("uploads", os.ModePerm); err != nil {
-				http.Error(w, "No se pudo crear carpeta de imágenes: "+err.Error(), http.StatusInternalServerError)
+			var buf bytes.Buffer
+			if _, err := io.Copy(&buf, file); err != nil {
+				http.Error(w, "No se pudo leer la imagen: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-
-			newImagePath := "uploads/" + handler.Filename
-
-			savedPath, err := utils.SaveFile(file, newImagePath)
-			if err != nil || savedPath == "" {
-				http.Error(w, "No se pudo guardar la nueva imagen: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			if user.Image != "" {
-				if err := os.Remove(user.Image); err != nil && !os.IsNotExist(err) {
-					log.Println("No se pudo eliminar imagen anterior:", err)
-				}
-			}
-
-			imagePath = savedPath
+			imageBase64 = base64.StdEncoding.EncodeToString(buf.Bytes())
 			imageUpdated = true
 		} else {
 			if err != http.ErrMissingFile {
@@ -277,6 +265,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 			Password string `json:"password"`
 			Role     string `json:"role"`
 			Zona     string `json:"zona"`
+			Image    string `json:"image"` // Para actualizar imagen desde JSON
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			http.Error(w, "Error en el formato JSON: "+err.Error(), http.StatusBadRequest)
@@ -286,6 +275,11 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		password = input.Password
 		role = input.Role
 		zona = input.Zona
+
+		if input.Image != "" {
+			imageBase64 = input.Image
+			imageUpdated = true
+		}
 	}
 
 	updates := map[string]interface{}{}
@@ -308,7 +302,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		updates["password"] = string(hashed)
 	}
 	if imageUpdated {
-		updates["image"] = imagePath
+		updates["image"] = imageBase64
 	}
 
 	if len(updates) > 0 {
@@ -320,6 +314,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte("Usuario actualizado"))
 }
+
 
 
 
