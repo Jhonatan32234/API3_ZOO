@@ -145,12 +145,16 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dbUser.FormatImage()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"token":    token,
 		"username": dbUser.Username,
 		"role":     dbUser.Role,
 		"zona":     dbUser.Zona,
+		"image":    dbUser.ImageStr,
+		"imageType": dbUser.MimeType,
 	})
 }
 
