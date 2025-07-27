@@ -6,12 +6,17 @@ import (
 	"api3/src/routes"
 	"api3/src/utils"
 	"log"
+	"github.com/joho/godotenv"
 	"net/http"
 
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func main() {
+	err := godotenv.Load(".env")
+    if err != nil {
+        log.Println("Advertencia: no se pudo cargar el archivo .env:", err)
+    }
 	db.ConnectDB()
 	r := routes.SetupRoutes()
 	r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)

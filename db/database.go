@@ -4,6 +4,7 @@ import (
 	"api3/src/models"
 	"fmt"
 	"log"
+	"os"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -12,9 +13,7 @@ import (
 var DB *gorm.DB
 
 func ConnectDB() {
-	//dsn := "root:root@tcp(localhost:3306)/userdb?parseTime=true"
-	//dsn := "root:root@tcp(mysql-container:3306)/userdb?parseTime=true"
-	dsn := "root:root@tcp(34.229.32.55:3306)/userdb?parseTime=true"
+	dsn := os.Getenv("MYSQLCONN")
 
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
